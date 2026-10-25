@@ -1,0 +1,26 @@
+# Dependencies
+frontend/node_modules/
+
+# Next.js generated files
+frontend/.next/
+frontend/out/
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Local Salesforce CLI configuration
+.sf/
+
+# Local editor settings
+.vscode/
