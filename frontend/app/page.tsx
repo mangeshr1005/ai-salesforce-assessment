@@ -4,90 +4,89 @@ import { useState } from "react";
 
 export default function Home() {
   const [jobDescription, setJobDescription] = useState("");
-  const [message, setMessage] = useState("");
+  const [result, setResult] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  function handleGenerate() {
+  const generateAssessment = async () => {
     if (!jobDescription.trim()) {
-      setMessage("Please enter a job description first.");
+      setResult("Please enter a job description.");
       return;
     }
 
-    setMessage(
-      "Job description received! AI assessment generation will be connected in the next phase."
-    );
-  }
+    setLoading(true);
+    setResult("");
+
+    try {
+      const response = await fetch(
+        "http://localhost:8000/api/assessment/generate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            job_description: jobDescription,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setResult(data.detail || "Something went wrong.");
+        return;
+      }
+
+      setResult(
+        `Backend response: ${data.message}\n\nStatus: ${data.status}`
+      );
+    } catch (error) {
+      setResult(
+        "Unable to connect to the backend. Make sure the FastAPI server is running."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <main className="min-h-screen bg-slate-100 px-6 py-12">
-      <div className="mx-auto max-w-5xl">
-        <header className="mb-10">
-          <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-blue-700">
-            AI Recruitment Platform
-          </p>
+    <main className="min-h-screen bg-gray-100 p-8">
+      <div className="mx-auto max-w-4xl">
+        <h1 className="mb-2 text-3xl font-bold">
+          AI Salesforce Assessment Platform
+        </h1>
 
-          <h1 className="text-4xl font-bold text-slate-900">
-            Salesforce Technical Assessment
-          </h1>
+        <p className="mb-8 text-gray-600">
+          Create AI-powered Salesforce technical assessments from job
+          descriptions.
+        </p>
 
-          <p className="mt-3 text-slate-600">
-            Generate practical technical assessments from a job description.
-          </p>
-        </header>
-
-        <section className="rounded-2xl bg-white p-8 shadow-sm">
-          <h2 className="text-xl font-semibold text-slate-900">
-            Create an Assessment
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-600">
-            Paste the job description to prepare a tailored assessment.
-          </p>
-
-          <label
-            htmlFor="jobDescription"
-            className="mt-6 block text-sm font-medium text-slate-800"
-          >
+        <div className="rounded-lg bg-white p-6 shadow">
+          <label className="mb-2 block text-lg font-semibold">
             Job Description
           </label>
 
           <textarea
-            id="jobDescription"
             value={jobDescription}
-            onChange={(event) => {
-              setJobDescription(event.target.value);
-              setMessage("");
-            }}
-            placeholder="Example: Salesforce Developer with 5+ years of experience in Apex, LWC, integrations, Flow, and Agentforce..."
-            rows={9}
-            className="mt-2 w-full rounded-xl border border-slate-300 p-4 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            onChange={(e) => setJobDescription(e.target.value)}
+            placeholder="Paste the Salesforce job description here..."
+            className="min-h-64 w-full rounded-md border border-gray-300 p-4 outline-none focus:border-blue-500"
           />
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-sm text-slate-500">
-              Assessment duration: 30 minutes
-            </p>
+          <button
+            onClick={generateAssessment}
+            disabled={loading}
+            className="mt-4 rounded-md bg-blue-600 px-6 py-3 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400"
+          >
+            {loading ? "Sending..." : "Generate Assessment"}
+          </button>
 
-            <button
-              onClick={handleGenerate}
-              className="rounded-xl bg-blue-700 px-6 py-3 font-semibold text-white hover:bg-blue-800"
-            >
-              Generate Assessment
-            </button>
-          </div>
-
-          {message && (
-            <p
-              role="status"
-              className="mt-5 rounded-lg bg-blue-50 p-4 text-sm text-blue-800"
-            >
-              {message}
-            </p>
+          {result && (
+            <div className="mt-6 whitespace-pre-line rounded-md bg-gray-100 p-4">
+              {result}
+            </div>
           )}
-        </section>
-
-        <footer className="mt-8 text-center text-sm text-slate-500">
-          AI Salesforce Assessment Platform · Development Version
-        </footer>
+        </div>
       </div>
     </main>
   );
