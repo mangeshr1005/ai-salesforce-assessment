@@ -10,6 +10,8 @@ type Question = {
   difficulty: string;
   question: string;
   correct_answer: string;
+  follow_up_questions?: string[];
+  evidence_to_assess?: string[];
   marks: number;
 };
 
@@ -17,6 +19,7 @@ type Assessment = {
   role: string;
   total_duration_minutes: number;
   questions: Question[];
+  key_skills?: string[];
 };
 
 type Submission = {
@@ -456,6 +459,32 @@ export default function Home() {
                   {question.question}
                 </p>
 
+                {question.follow_up_questions && question.follow_up_questions.length > 0 && (
+                  <details className="mt-4 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
+                    <summary className="cursor-pointer font-semibold text-slate-700">
+                      Suggested follow-up questions
+                    </summary>
+                    <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-700">
+                      {question.follow_up_questions.map((followUp, followUpIndex) => (
+                        <li key={followUpIndex}>{followUp}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+
+                {question.evidence_to_assess && question.evidence_to_assess.length > 0 && (
+                  <details className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50/50 p-4">
+                    <summary className="cursor-pointer font-semibold text-slate-700">
+                      Evidence to look for in a strong answer
+                    </summary>
+                    <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-700">
+                      {question.evidence_to_assess.map((evidence, evidenceIndex) => (
+                        <li key={evidenceIndex}>{evidence}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+
                 <details className="mt-5 rounded-lg bg-slate-50 p-4">
                   <summary className="cursor-pointer font-semibold text-slate-700">
                     View expected answer
@@ -780,6 +809,5 @@ export default function Home() {
 </main>
   );
 }
-
 
 
