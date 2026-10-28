@@ -266,7 +266,7 @@ Required JSON shape:
                     "num_predict": 3500
                 }
             },
-            timeout=120
+            timeout=300
         )
 
         response.raise_for_status()
