@@ -468,9 +468,17 @@ function CandidateAssessmentContent() {
           </h2>
 
           <textarea
-            className="w-full rounded border p-3"
-            rows={6}
-            placeholder="Type your answer here..."
+            className={
+              question.type === "coding"
+                ? "w-full rounded border p-3 font-mono text-sm leading-6"
+                : "w-full rounded border p-3"
+            }
+            rows={question.type === "coding" ? 12 : 6}
+            placeholder={
+              question.type === "coding"
+                ? "Write your Apex / SOQL solution here..."
+                : "Type your answer here..."
+            }
             value={
               answers[String(question.id)] || ""
             }
