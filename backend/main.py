@@ -88,6 +88,80 @@ def ensure_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def validate_assessment_questions(questions, role_family, question_count):
+    """Reject incomplete, duplicated, or role-blueprint-mismatched AI output before saving."""
+    errors = []
+    if not isinstance(questions, list) or len(questions) != question_count:
+        return [f"Return exactly {question_count} questions."]
+
+    normalized_questions = []
+    for index, question in enumerate(questions, start=1):
+        if not isinstance(question, dict):
+            errors.append(f"Question {index} must be a JSON object.")
+            continue
+
+        text = str(question.get("question") or question.get("question_text") or "").strip()
+        answer = str(question.get("correct_answer") or question.get("expected_answer") or "").strip()
+        if not text:
+            errors.append(f"Question {index} is missing its question text.")
+            continue
+        if not answer:
+            errors.append(f"Question {index} is missing its expected answer.")
+        followups = question.get("follow_up_questions")
+        evidence = question.get("evidence_to_assess")
+        if not isinstance(followups, list) or not any(str(item).strip() for item in followups):
+            errors.append(f"Question {index} needs at least one useful follow-up question.")
+        if not isinstance(evidence, list) or len([item for item in evidence if str(item).strip()]) < 2:
+            errors.append(f"Question {index} needs at least two observable evaluation criteria.")
+
+        normalized_questions.append((text, answer))
+
+    # Catch repeated prompts even when the model changes a few words.
+    token_sets = []
+    for text, _ in normalized_questions:
+        tokens = {token for token in __import__("re").findall(r"[a-z0-9]+", text.lower()) if len(token) > 2}
+        token_sets.append(tokens)
+    for left in range(len(token_sets)):
+        for right in range(left + 1, len(token_sets)):
+            union = token_sets[left] | token_sets[right]
+            similarity = len(token_sets[left] & token_sets[right]) / len(union) if union else 1.0
+            if similarity >= 0.68:
+                errors.append(f"Questions {left + 1} and {right + 1} are duplicates or too similar.")
+
+    if question_count == 5 and role_family == "developer" and len(normalized_questions) == 5:
+        q1, q2, q3, q4, q5 = [item[0].lower() for item in normalized_questions]
+        code_verbs = ("write", "create", "implement", "build", "complete", "correct", "fix", "refactor")
+        if any(term in q1 for term in ("write code", "write an apex", "write a soql", "debug this code")):
+            errors.append("Question 1 must be theory, not a coding task.")
+        if not any(term in q2 for term in ("scenario", "suppose", "imagine", "you are assigned", "a client", "business requirement", "in production", "your team", "a customer", "a requirement")):
+            errors.append("Question 2 must describe a concrete real-world implementation scenario.")
+        if not ("apex" in q3 and ("trigger" in q3 or "handler" in q3) and any(verb in q3 for verb in code_verbs)):
+            errors.append("Question 3 must explicitly ask the candidate to write or implement an Apex trigger/handler.")
+        if not (("soql" in q4 or "select " in q4) and any(verb in q4 for verb in code_verbs)):
+            errors.append("Question 4 must require the candidate to write a SOQL query.")
+        code_markers = ("trigger ", "for (", "for(", "select ", "database.", "insert ", "update ", "list<", "list <")
+        review_terms = ("review", "debug", "identify", "find the issue", "what is wrong", "correct the")
+        if not (any(marker in q5 for marker in code_markers) and any(term in q5 for term in review_terms)):
+            errors.append("Question 5 must include a short buggy Apex/SOQL snippet and ask the candidate to review or debug it.")
+
+    if question_count == 5 and role_family == "admin" and len(normalized_questions) == 5:
+        q1, q2, q3, q4, q5 = [item[0].lower() for item in normalized_questions]
+        all_text = " ".join(text + " " + answer for text, answer in normalized_questions).lower()
+        forbidden = ("apex trigger", "write an apex", "write a soql", "soql query", "javascript", "write code", "debug this code", "review this code", "database.query", "select * from")
+        if any(term in all_text for term in forbidden):
+            errors.append("Administrator assessments must not contain coding or source-code tasks.")
+        if not any(term in q2 for term in ("scenario", "suppose", "imagine", "you are assigned", "a user", "a manager", "a team", "business requirement", "in production", "a department", "a request")):
+            errors.append("Question 2 must be a real-world record-access or security scenario.")
+        if not any(term in q3 for term in ("flow builder", "record-triggered flow", "screen flow", "autolaunched flow")):
+            errors.append("Question 3 must assess Flow Builder configuration.")
+        if not any(term in q4 for term in ("report", "dashboard")):
+            errors.append("Question 4 must assess reports and dashboards.")
+        if not any(term in q5 for term in ("data import", "data loader", "duplicate", "data quality", "troubleshoot", "troubleshooting", "failed record", "error message", "data management", "record update")):
+            errors.append("Question 5 must assess data management or troubleshooting.")
+
+    return errors
+
+
 # ============================================================
 # Health Endpoints
 # ============================================================
@@ -251,61 +325,82 @@ Required JSON shape:
   ]
 }}
 """
-    try:
-
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={
-                "model": "qwen2.5:3b",
-                "prompt": prompt,
-                "stream": False,
-                "format": "json",
-                "keep_alive": "10m",
-                "options": {
-                    "temperature": 0.2,
-                    "num_predict": 3500
-                }
-            },
-            timeout=300
-        )
-
-        response.raise_for_status()
-
-        ai_result = response.json()
-
-        assessment = json.loads(
-            ai_result["response"]
-        )
-
-    except requests.RequestException as error:
-
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Unable to connect to Ollama. "
-                "Make sure Ollama is running and the model is available. "
-                f"Details: {error}"
+    assessment = None
+    validation_errors = []
+    for attempt in range(2):
+        try:
+            response = requests.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": "qwen2.5:3b",
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "keep_alive": "10m",
+                    "options": {
+                        "temperature": 0.2,
+                        "num_predict": 3500
+                    }
+                },
+                timeout=300
             )
-        )
-
-    except (KeyError, ValueError, TypeError) as error:
-
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                f"The AI returned an invalid response: {error}"
+            response.raise_for_status()
+            ai_result = response.json()
+            assessment = json.loads(ai_result["response"])
+        except requests.RequestException as error:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Unable to connect to Ollama. "
+                    "Make sure Ollama is running and the model is available. "
+                    f"Details: {error}"
+                )
             )
-        )
+        except (KeyError, ValueError, TypeError) as error:
+            if attempt == 0:
+                prompt += (
+                    "\\n\\nRETRY REQUIREMENT: Your previous response was not valid JSON "
+                    f"({error}). Return one complete, valid JSON object matching the required schema."
+                )
+                continue
+            raise HTTPException(
+                status_code=502,
+                detail=f"The AI returned an invalid response after a retry: {error}"
+            )
+
+        if not isinstance(assessment, dict):
+            validation_errors = ["Return a single JSON object, not an array or scalar."]
+        else:
+            questions = assessment.get("questions", [])
+            validation_errors = validate_assessment_questions(
+                questions, role_family, question_count
+            )
+
+        if not validation_errors:
+            break
+
+        if attempt == 0:
+            prompt += (
+                "\\n\\nRETRY REQUIREMENTS: Your previous response failed these checks: "
+                + "; ".join(validation_errors)
+                + ". Regenerate all questions from scratch. Follow the role blueprint exactly, "
+                  "make every question distinct, include a correct_answer, at least one "
+                  "follow_up_questions item, and at least two evidence_to_assess items per question. "
+                  "Return only valid JSON."
+            )
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "The AI generated an assessment that failed quality checks after one retry: "
+                    + "; ".join(validation_errors)
+                )
+            )
 
     if not isinstance(assessment, dict):
         raise HTTPException(status_code=502, detail="The AI response must be a JSON object.")
 
     questions = assessment.get("questions", [])
-    if not isinstance(questions, list) or len(questions) != question_count:
-        raise HTTPException(
-            status_code=502,
-            detail=f"The AI must return exactly {question_count} questions. Please retry generation."
-        )
 
     # Normalize model field aliases before persistence and API response.
     for index, question in enumerate(questions, start=1):
