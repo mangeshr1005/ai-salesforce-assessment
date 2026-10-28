@@ -429,7 +429,7 @@ export default function Home() {
                   </div>
                 )}
                 <p className="mt-2 text-slate-600">
-                  {assessment.questions.length} questions Â·{" "}
+                  {assessment.questions.length} questions ·{" "}
                   {assessment.total_duration_minutes} minutes
                 </p>
               </div>
@@ -713,7 +713,7 @@ export default function Home() {
         )}
 
         <footer className="mt-10 text-center text-sm text-slate-500">
-          Salesforce Assessment Platform Â· Recruiter workspace
+          Salesforce Assessment Platform · Recruiter workspace
         </footer>
       </div>
     
