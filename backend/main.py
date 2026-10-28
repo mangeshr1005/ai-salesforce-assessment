@@ -218,7 +218,7 @@ Required JSON shape:
                 "keep_alive": "10m",
                 "options": {
                     "temperature": 0.2,
-                    "num_predict": 700
+                    "num_predict": 3500
                 }
             },
             timeout=120
