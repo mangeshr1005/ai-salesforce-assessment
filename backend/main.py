@@ -129,7 +129,7 @@ def generate_assessment(payload: dict):
     experience_level = str(payload.get("experience_level", "Infer from the job description")).strip()
     interview_type = str(payload.get("interview_type", "balanced")).strip().lower()
     try:
-        question_count = int(payload.get("question_count", 2))
+        question_count = int(payload.get("question_count", 5))
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Question count must be a number.")
 
@@ -143,11 +143,53 @@ def generate_assessment(payload: dict):
             detail="Interview type must be balanced, technical, scenario, or behavioral."
         )
 
+    role_text = f"{role_title}\n{job_description}".lower()
+    # Prefer explicit role titles; never allow incidental Apex mentions in an Admin JD
+    # to turn the assessment into a coding test.
+    explicit_title = role_title.lower()
+    if any(term in explicit_title for term in ("administrator", "admin")):
+        role_family = "admin"
+    elif any(term in explicit_title for term in ("developer", "software engineer", "apex engineer")):
+        role_family = "developer"
+    elif not role_title and any(term in role_text for term in ("salesforce administrator", "salesforce admin")):
+        role_family = "admin"
+    elif any(term in explicit_title for term in ("developer", "software engineer", "apex engineer")) or (
+        not role_title and any(term in role_text for term in ("salesforce developer", "apex trigger", "apex development", "lightning web components", "lwc developer"))
+    ):
+        role_family = "developer"
+    else:
+        role_family = "general"
+
     role_instruction = (
         f"Use this recruiter-provided role title as the target role: {role_title}."
         if role_title
         else "Infer the primary job role from the job description. Do not assume the role is Salesforce Administrator or Salesforce Developer."
     )
+    if role_family == "developer" and question_count == 5:
+        role_blueprint = """
+MANDATORY SALESFORCE DEVELOPER 5-QUESTION BALANCE (keep this exact order):
+1. Theory / core technical knowledge, 5 marks, 4 minutes. No code-writing requirement.
+2. Real-world implementation scenario, 5 marks, 5 minutes.
+3. Apex trigger or handler coding task, 10 marks, 8 minutes. Require bulk-safe code and relevant edge cases.
+4. SOQL query-writing task, 5 marks, 5 minutes. The candidate must write a query.
+5. Code review/debugging task, 5 marks, 8 minutes. Show a short buggy Apex/SOQL snippet and ask the candidate to identify defects and propose a corrected solution.
+Use question types exactly: technical, scenario, coding, coding, coding. Marks exactly: 5, 5, 10, 5, 5. Each question must fit its allotted time. Total 30 marks and 30 minutes.
+"""
+    elif role_family == "admin" and question_count == 5:
+        role_blueprint = """
+MANDATORY SALESFORCE ADMINISTRATOR 5-QUESTION BALANCE (keep this exact order):
+1. Admin theory, 5 marks, 4 minutes.
+2. Real-world security or record-access scenario, 5 marks, 5 minutes.
+3. Flow Builder configuration scenario, 10 marks, 8 minutes.
+4. Reports and dashboards practical scenario, 5 marks, 5 minutes.
+5. Data management or troubleshooting scenario, 5 marks, 8 minutes.
+Use question types exactly: technical, scenario, functional, functional, scenario. Marks exactly: 5, 5, 10, 5, 5. Total 30 marks and 30 minutes.
+ABSOLUTE NO-CODE RULE: do not ask for Apex, triggers, SOQL, JavaScript, formulas written as code, code review, debugging source code, or any programming. Do not include code snippets. A Salesforce Administrator assessment must contain zero coding questions even if the JD mentions developer tools as optional exposure.
+"""
+    else:
+        role_blueprint = """
+For non-Developer roles, do not introduce coding tasks unless coding is explicitly a core responsibility in the role title and JD. For Administrator roles, coding is always prohibited. If exactly five questions are requested for an Admin or Developer role, follow the corresponding mandatory blueprint above.
+"""
     interview_type_instructions = {
         "balanced": "Create a balanced mix appropriate to the JD: technical/role knowledge, practical scenarios, and behavioral questions only where relevant.",
         "technical": "Focus on technical or functional knowledge explicitly required by the JD, including realistic troubleshooting or implementation questions.",
@@ -168,6 +210,9 @@ Interview format: {interview_type}
 Format instructions: {interview_type_instructions[interview_type]}
 Number of questions required: exactly {question_count}
 Assessment duration: 30 minutes
+
+ROLE-SPECIFIC ASSESSMENT BLUEPRINT:
+{role_blueprint}
 
 REQUIREMENTS:
 - Extract the role, key responsibilities, mandatory skills, seniority, and technologies from the supplied job description.
@@ -279,6 +324,15 @@ Required JSON shape:
         question["id"] = index
         question["topic"] = str(question.get("topic") or "General")
         question["type"] = str(question.get("type") or "technical").lower()
+        # Enforce the requested 5-question role mix in persisted data, not just in the prompt.
+        if question_count == 5 and role_family == "developer":
+            question["type"] = ["technical", "scenario", "coding", "coding", "coding"][index - 1]
+            question["marks"] = [5, 5, 10, 5, 5][index - 1]
+        elif question_count == 5 and role_family == "admin":
+            question["type"] = ["technical", "scenario", "functional", "functional", "scenario"][index - 1]
+            question["marks"] = [5, 5, 10, 5, 5][index - 1]
+            if any(term in question_text.lower() for term in ("write an apex", "write a soql", "apex trigger", "debug this code", "review this code", "write code", "coding task")):
+                raise HTTPException(status_code=502, detail=f"Question {index} violates the no-code rule for Salesforce Administrator assessments. Please retry generation.")
         difficulty = str(question.get("difficulty") or "medium").lower()
         question["difficulty"] = difficulty if difficulty in {"easy", "medium", "hard"} else "medium"
         try:
