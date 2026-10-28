@@ -54,7 +54,7 @@ function CandidateAssessmentContent() {
     async function loadAssessment() {
       try {
         const response = await fetch(
-          `http://localhost:8000/api/candidate/assessment/${assessmentId}`
+          `http://127.0.0.1:8001/api/candidate/assessment/${assessmentId}`
         );
 
         if (!response.ok) {
@@ -152,7 +152,7 @@ function CandidateAssessmentContent() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/candidate/assessment/${assessmentId}/start`,
+        `http://127.0.0.1:8001/api/candidate/assessment/${assessmentId}/start`,
         {
           method: "POST",
           headers: {
@@ -220,7 +220,7 @@ function CandidateAssessmentContent() {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/api/candidate/assessment/${assessmentId}/submit`,
+        `http://127.0.0.1:8001/api/candidate/assessment/${assessmentId}/submit`,
         {
           method: "POST",
           headers: {
