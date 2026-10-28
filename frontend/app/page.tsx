@@ -93,7 +93,7 @@ type EvaluationResult = {
     recommendation: string;
   };
 };
-const API_URL = "http://localhost:8000";
+const API_URL = "http://127.0.0.1:8001";
 
 function formatDate(value: string | null) {
   if (!value) return "Not available";
@@ -418,6 +418,15 @@ export default function Home() {
                 <h2 className="mt-1 text-2xl font-bold text-slate-900">
                   {assessment.role}
                 </h2>
+                {assessment.key_skills && assessment.key_skills.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {assessment.key_skills.map((skill) => (
+                      <span key={skill} className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <p className="mt-2 text-slate-600">
                   {assessment.questions.length} questions Â·{" "}
                   {assessment.total_duration_minutes} minutes
