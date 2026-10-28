@@ -125,39 +125,85 @@ def generate_assessment(payload: dict):
             detail="Job description is required."
         )
 
-    prompt = f"""
-Create exactly 2 Salesforce interview questions for this job description:
+    role_title = str(payload.get("role_title", "")).strip()
+    experience_level = str(payload.get("experience_level", "Infer from the job description")).strip()
+    interview_type = str(payload.get("interview_type", "balanced")).strip().lower()
+    try:
+        question_count = int(payload.get("question_count", 2))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Question count must be a number.")
 
+    if question_count < 2 or question_count > 10:
+        raise HTTPException(status_code=400, detail="Question count must be between 2 and 10.")
+
+    allowed_interview_types = {"balanced", "technical", "scenario", "behavioral"}
+    if interview_type not in allowed_interview_types:
+        raise HTTPException(
+            status_code=400,
+            detail="Interview type must be balanced, technical, scenario, or behavioral."
+        )
+
+    role_instruction = (
+        f"Use this recruiter-provided role title as the target role: {role_title}."
+        if role_title
+        else "Infer the primary job role from the job description. Do not assume the role is Salesforce Administrator or Salesforce Developer."
+    )
+
+    interview_type_instructions = {
+        "balanced": "Create a balanced mix appropriate to the JD: technical/role knowledge, practical scenarios, and behavioral questions only where relevant.",
+        "technical": "Focus on technical or functional knowledge explicitly required by the JD, including realistic troubleshooting or implementation questions.",
+        "scenario": "Focus on realistic workplace scenarios and ask the candidate to explain decisions, steps, trade-offs, and validation.",
+        "behavioral": "Focus on job-related past behavior, collaboration, ownership, prioritization, and stakeholder communication. Use STAR-style prompts where appropriate, while keeping questions tied to the JD."
+    }
+
+    prompt = f"""
+You are an experienced technical interviewer creating a structured, job-specific interview assessment.
+
+JOB DESCRIPTION (the primary source of truth):
 {job_description}
 
-Return valid JSON only:
+ROLE GUIDANCE:
+{role_instruction}
+Experience/seniority: {experience_level}
+Interview format: {interview_type}
+Format instructions: {interview_type_instructions[interview_type]}
+Number of questions required: exactly {question_count}
+Assessment duration: 30 minutes
 
+REQUIREMENTS:
+- Extract the role, key responsibilities, mandatory skills, seniority, and technologies from the supplied job description.
+- Generate questions that directly test those requirements. Use role-specific terminology and realistic tasks.
+- Do not default to Salesforce Administrator, Salesforce Developer, Apex, or any other role/technology unless the job description or explicit role title supports it.
+- For Salesforce roles, distinguish Admin, Developer, QA/Tester, Architect, Sales Cloud, Service Cloud, CPQ, Marketing Cloud, B2B Commerce, Data Cloud, and other specialisms based on the actual JD. Do not mix unrelated specialisms.
+- Do not invent employer-specific systems, metrics, products, or responsibilities not present in the JD.
+- Match the difficulty to the stated experience/seniority. Include practical application rather than trivia alone.
+- Keep every question answerable, unambiguous, and distinct. Cover different important competencies rather than asking the same thing in different words.
+- Expected answers must be concise but technically accurate and specific enough to evaluate a response.
+- Return exactly {question_count} questions. Each question must have all required fields.
+- Use only these question types: technical, scenario, behavioral, coding, functional.
+- Difficulty must be one of: easy, medium, hard.
+- Marks must be an integer from 1 to 10.
+- Return a JSON object only. Do not wrap it in Markdown or add explanatory text.
+- JSON strings must be valid and must not contain unescaped line breaks.
+
+Required JSON shape:
 {{
-  "role": "Salesforce Developer",
+  "role": "Role inferred from the JD",
   "total_duration_minutes": 30,
+  "key_skills": ["Skill grounded in the JD"],
   "questions": [
     {{
       "id": 1,
-      "topic": "Apex",
+      "topic": "Specific skill or competency from the JD",
       "type": "technical",
       "difficulty": "medium",
-      "question": "Question text",
-      "correct_answer": "Expected answer",
-      "marks": 5
-    }},
-    {{
-      "id": 2,
-      "topic": "Apex",
-      "type": "coding",
-      "difficulty": "medium",
-      "question": "Coding question",
-      "correct_answer": "Expected answer",
+      "question": "A clear, role-specific interview question",
+      "correct_answer": "Expected answer and key points a good response should include",
       "marks": 5
     }}
   ]
 }}
 """
-
     try:
 
         response = requests.post(
@@ -204,20 +250,62 @@ Return valid JSON only:
             )
         )
 
-    questions = assessment.get(
-        "questions",
-        []
-    )
+    if not isinstance(assessment, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="The AI response must be a JSON object."
+        )
 
-    if not isinstance(questions, list) or not questions:
-
+    questions = assessment.get("questions", [])
+    if not isinstance(questions, list) or len(questions) != question_count:
         raise HTTPException(
             status_code=502,
             detail=(
-                "The AI did not return any valid "
-                "assessment questions."
+                f"The AI must return exactly {question_count} questions. "
+                "Please retry generation."
             )
         )
+
+    # Normalize common model variations at the API boundary. The database and
+    # frontend use one stable schema regardless of whether Ollama returns
+    # question/question_text or correct_answer/expected_answer.
+    for index, question in enumerate(questions, start=1):
+        if not isinstance(question, dict):
+            raise HTTPException(
+                status_code=502,
+                detail=f"Question {index} must be a JSON object."
+            )
+
+        question_text = question.get("question") or question.get("question_text")
+        expected_answer = question.get("correct_answer") or question.get("expected_answer")
+
+        if not isinstance(question_text, str) or not question_text.strip():
+            raise HTTPException(
+                status_code=502,
+                detail=f"Question {index} is missing question text."
+            )
+        if not isinstance(expected_answer, str) or not expected_answer.strip():
+            raise HTTPException(
+                status_code=502,
+                detail=f"Question {index} is missing its expected answer."
+            )
+
+        question["question"] = question_text.strip()
+        question["correct_answer"] = expected_answer.strip()
+        question["id"] = index
+        question["topic"] = str(question.get("topic") or "General")
+        question["type"] = str(question.get("type") or "technical").lower()
+        difficulty = str(question.get("difficulty") or "medium").lower()
+        question["difficulty"] = difficulty if difficulty in {"easy", "medium", "hard"} else "medium"
+        try:
+            marks = int(question.get("marks", 5))
+        except (TypeError, ValueError):
+            marks = 5
+        question["marks"] = min(10, max(1, marks))
+
+    assessment["questions"] = questions
+    assessment["role"] = str(assessment.get("role") or role_title or "Salesforce Assessment")
+    assessment["total_duration_minutes"] = 30
 
     db = SessionLocal()
 
