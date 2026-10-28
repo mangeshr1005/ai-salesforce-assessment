@@ -131,7 +131,7 @@ export default function Home() {
   const [roleTitle, setRoleTitle] = useState("");
   const [experienceLevel, setExperienceLevel] = useState("Infer from the job description");
   const [interviewType, setInterviewType] = useState("balanced");
-  const [questionCount, setQuestionCount] = useState(2);
+  const [questionCount, setQuestionCount] = useState(5);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -369,6 +369,7 @@ export default function Home() {
               >
                 <option value={2}>2 questions (quick test)</option>
                 <option value={4}>4 questions</option>
+                <option value={5}>5 questions (balanced, 30 minutes)</option>
                 <option value={6}>6 questions</option>
                 <option value={8}>8 questions</option>
                 <option value={10}>10 questions</option>
