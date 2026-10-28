@@ -327,6 +327,13 @@ Required JSON shape:
 """
     assessment = None
     validation_errors = []
+
+    # Ollama generation time varies significantly with question count and hardware.
+    # Scale both the response budget and read timeout so larger assessments are not
+    # cut off by the fixed 300-second timeout or a too-small token limit.
+    generation_timeout_seconds = max(300, question_count * 120)
+    generation_token_budget = min(12000, max(3500, question_count * 1100))
+
     for attempt in range(2):
         try:
             response = requests.post(
@@ -339,10 +346,10 @@ Required JSON shape:
                     "keep_alive": "10m",
                     "options": {
                         "temperature": 0.2,
-                        "num_predict": 3500
+                        "num_predict": generation_token_budget
                     }
                 },
-                timeout=300
+                timeout=(10, generation_timeout_seconds)
             )
             response.raise_for_status()
             ai_result = response.json()
