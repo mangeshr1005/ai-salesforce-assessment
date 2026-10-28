@@ -125,6 +125,10 @@ export default function Home() {
   const [evaluating, setEvaluating] = useState(false);
 
   const [jobDescription, setJobDescription] = useState("");
+  const [roleTitle, setRoleTitle] = useState("");
+  const [experienceLevel, setExperienceLevel] = useState("Infer from the job description");
+  const [interviewType, setInterviewType] = useState("balanced");
+  const [questionCount, setQuestionCount] = useState(2);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -155,6 +159,10 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             job_description: jobDescription,
+            role_title: roleTitle,
+            experience_level: experienceLevel,
+            interview_type: interviewType,
+            question_count: questionCount,
           }),
         }
       );
@@ -302,6 +310,68 @@ export default function Home() {
           <h2 className="mb-5 text-xl font-bold text-slate-900">
             1. Generate an assessment
           </h2>
+
+          <div className="mb-5 grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-2 block font-semibold text-slate-800">
+                Job title / target role (optional)
+              </label>
+              <input
+                value={roleTitle}
+                onChange={(event) => setRoleTitle(event.target.value)}
+                placeholder="e.g. Salesforce QA Lead, CPQ Consultant, LWC Developer"
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+              <p className="mt-1 text-xs text-slate-500">Leave blank to infer the role from the JD.</p>
+            </div>
+            <div>
+              <label className="mb-2 block font-semibold text-slate-800">
+                Experience / seniority
+              </label>
+              <select
+                value={experienceLevel}
+                onChange={(event) => setExperienceLevel(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option>Infer from the job description</option>
+                <option>Entry level (0–2 years)</option>
+                <option>Mid level (3–5 years)</option>
+                <option>Senior (6–9 years)</option>
+                <option>Lead / Architect (10+ years)</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block font-semibold text-slate-800">
+                Interview type
+              </label>
+              <select
+                value={interviewType}
+                onChange={(event) => setInterviewType(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="balanced">Balanced interview</option>
+                <option value="technical">Technical / functional knowledge</option>
+                <option value="scenario">Practical scenarios</option>
+                <option value="behavioral">Behavioral / STAR questions</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-2 block font-semibold text-slate-800">
+                Number of questions
+              </label>
+              <select
+                value={questionCount}
+                onChange={(event) => setQuestionCount(Number(event.target.value))}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value={2}>2 questions (quick test)</option>
+                <option value={4}>4 questions</option>
+                <option value={6}>6 questions</option>
+                <option value={8}>8 questions</option>
+                <option value={10}>10 questions</option>
+              </select>
+            </div>
+          </div>
 
           <label className="mb-3 block font-semibold text-slate-800">
             Job description
@@ -710,7 +780,6 @@ export default function Home() {
 </main>
   );
 }
-
 
 
 
